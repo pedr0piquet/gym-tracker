@@ -4,8 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0f1115">
-  <title>Gym Tracker</title>
+  <title>Painel · Gym Tracker</title>
   <link rel="stylesheet" href="style.css">
+  <script src="catalog.js" defer></script>
   <script src="mock_user.js" defer></script>
   <script src="common.js" defer></script>
   <script src="script.js" defer></script>
@@ -13,19 +14,33 @@
 <body>
   <header class="topbar">
     <div class="topbar-row">
-      <a class="logo" href="index.html" aria-label="Gym Tracker">
+      <a class="logo" href="index.html" aria-label="Gym Tracker – Painel">
         <span class="logo-mark" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>
           </svg>
         </span>
+        <span class="logo-text">Gym Tracker</span>
       </a>
-      <nav aria-label="Principal">
-        <a href="#" aria-disabled="true" title="Em breve">Painel</a>
-        <a href="index.html" aria-current="page">Treino</a>
-        <a href="historico.html">Histórico</a>
+      <nav class="tabs" aria-label="Principal">
+        <a href="index.html" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></svg>
+          <span>Painel</span>
+        </a>
+        <a href="treinos.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg>
+          <span>Treino</span>
+        </a>
+        <a href="exercicios.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>
+          <span>Exercícios</span>
+        </a>
+        <a href="historico.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16"/><path d="m5 15 4-5 4 3 6-7"/></svg>
+          <span>Histórico</span>
+        </a>
       </nav>
-      <button type="button" class="icon-btn" id="search-toggle" aria-label="Buscar exercício" aria-expanded="false" aria-controls="search-bar">
+      <button type="button" class="icon-btn" id="search-toggle" aria-label="Buscar" aria-expanded="false" aria-controls="search-bar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/>
           <path d="m20 20-3.5-3.5"/>
@@ -33,7 +48,7 @@
       </button>
     </div>
     <div class="search-bar" id="search-bar" hidden>
-      <input type="search" id="search-input" placeholder="Buscar exercício…" aria-label="Buscar exercício" autocomplete="off">
+      <input type="search" id="search-input" placeholder="Buscar por nome ou músculo…" aria-label="Buscar por nome ou músculo" autocomplete="off">
     </div>
   </header>
 
@@ -60,9 +75,27 @@
       </div>
     </div>
 
+
+    <div class="today-bar">
+      <label class="preset-select">
+        <span>Treino</span>
+        <select id="preset-select"></select>
+      </label>
+      <a class="link-small" href="treinos.html">Editar treinos</a>
+    </div>
+
     <div class="list" id="exercises"></div>
-    <p class="empty" id="empty" hidden>Nenhum exercício encontrado.</p>
+    <p class="empty" id="empty" hidden></p>
+    <button type="button" class="btn btn-secondary btn-block" id="add-exercise">+ Adicionar exercício</button>
   </main>
+
+  <dialog class="sheet" id="add-dialog" aria-labelledby="add-title">
+    <div class="sheet-head">
+      <h2 id="add-title">Adicionar ao treino de hoje</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Fechar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="sheet-body" id="add-picker"></div>
+  </dialog>
 
   <template id="card-template">
     <details class="card">
@@ -76,6 +109,7 @@
         </span>
         <span class="info">
           <strong class="name"></strong>
+          <span class="muscles"></span>
           <span class="summary-line">
             <span class="chip sets"></span>
             <span class="chip load"></span>
@@ -117,7 +151,10 @@
           <p class="last-time">Última vez<span class="last-date"></span>: <span class="last-sets"></span></p>
           <button type="button" class="btn btn-progress" hidden></button>
         </div>
-        <a class="history-link">Ver histórico →</a>
+        <div class="card-links">
+          <a class="history-link">Ver histórico →</a>
+          <button type="button" class="link-button remove-today" hidden>Tirar de hoje</button>
+        </div>
       </div>
     </details>
   </template>

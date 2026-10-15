@@ -1,11 +1,11 @@
-// Página "Treino de hoje". Depende de mock_user.js e common.js.
+// Página "Painel" (treino de hoje). Depende de catalog.js, mock_user.js e common.js.
 
 // ---------- Regras de progressão (ajuste aqui) ----------
 const PROGRESSION = {
   sessionsAtSameLoad: 3,   // nº de treinos seguidos com a mesma carga
   targetSets: 3,           // séries que precisam atingir targetReps no último treino
   targetReps: 12,          // reps por série para considerar a carga "dominada"
-  weightIncrement: 2.5,    // kg a somar ao subir a carga
+  weightIncrement: 2.5,    // kg a somar ao subir a carga (idealmente +10%)
   repsAfterIncrease: [6, 8], // faixa de reps ao voltar com a carga nova
 };
 
@@ -44,22 +44,42 @@ function progressionLoad(history) {
   return doneSets >= PROGRESSION.targetSets ? load : null;
 }
 
-// ---------- Renderização ----------
+// ---------- Escolha do treino de hoje ----------
+const presetSelect = document.getElementById('preset-select');
+
+function renderPresetSelect() {
+  presetSelect.replaceChildren();
+  for (const p of presets) {
+    presetSelect.add(new Option(`${p.name} (${describeDays(p.days)})`, p.id));
+  }
+  presetSelect.add(new Option('Livre — sem treino fixo', ''));
+  presetSelect.value = today.presetId ?? '';
+}
+
+presetSelect.addEventListener('change', () => {
+  today.presetId = presetSelect.value || null;
+  saveToday();
+  renderList();
+});
+
+// ---------- Cards ----------
 const list = document.getElementById('exercises');
 const emptyMessage = document.getElementById('empty');
 const cardTemplate = document.getElementById('card-template');
 const setTemplate = document.getElementById('set-template');
-const cards = []; // { card, ex }
+let cards = []; // { card, ex }
+let searchQuery = '';
 
 // Preenche tudo que depende dos registros ou da unidade
 function renderCard(card, ex) {
-  card.querySelector('.chip.sets').textContent = ex.entries.length ? describeReps(ex.entries) : 'Nenhuma série ainda';
-  card.querySelector('.chip.load').textContent = describeLoad(ex.entries);
+  const entries = todayEntries(ex.id);
+  card.querySelector('.chip.sets').textContent = entries.length ? describeReps(entries) : 'Nenhuma série ainda';
+  card.querySelector('.chip.load').textContent = describeLoad(entries);
   card.querySelector('.unit-label').textContent = unit;
 
   const setList = card.querySelector('.set-list');
   setList.replaceChildren();
-  ex.entries.forEach((e, i) => {
+  entries.forEach((e, i) => {
     const row = setTemplate.content.cloneNode(true);
     row.querySelector('.set-number').textContent = i + 1;
     row.querySelector('.set-weight').textContent = withUnit(e.weight);
@@ -67,18 +87,21 @@ function renderCard(card, ex) {
     setList.append(row);
   });
 
-  const last = ex.history[0];
+  const last = historyOf(ex.id)[0];
   card.querySelector('.last-sets').textContent = last
     ? last.entries.map(e => `${withUnit(e.weight)} · ${describeEntry(e)}`).join(', ')
     : 'primeira vez';
 
-  const load = progressionLoad(ex.history);
+  const load = progressionLoad(historyOf(ex.id));
   const progressBtn = card.querySelector('.btn-progress');
   progressBtn.hidden = load === null;
   if (load !== null) {
     const [minReps, maxReps] = PROGRESSION.repsAfterIncrease;
     progressBtn.textContent = `↑ ${withUnit(load + PROGRESSION.weightIncrement)} · ${minReps}–${maxReps} reps`;
   }
+
+  // Só exercícios avulsos e ainda sem registro podem sair do dia
+  card.querySelector('.remove-today').hidden = !today.extras.includes(ex.id) || entries.length > 0;
 }
 
 function renderFavorite(card, ex) {
@@ -90,8 +113,7 @@ function renderFavorite(card, ex) {
 
 // Favoritos no topo da lista
 function sortCards() {
-  const order = sortByFavorite(cards.map(c => c.ex));
-  for (const ex of order) {
+  for (const ex of sortByFavorite(cards.map(c => c.ex))) {
     list.append(cards.find(c => c.ex === ex).card);
   }
 }
@@ -113,13 +135,11 @@ function closeForm(card) {
 
 function createCard(ex) {
   const card = cardTemplate.content.cloneNode(true).querySelector('.card');
-  const last = ex.history[0];
+  const last = historyOf(ex.id)[0];
 
-  if (ex.media) {
-    card.querySelector('.frame-start').src = `media/${ex.media}-0.jpg`;
-    card.querySelector('.frame-end').src = `media/${ex.media}-1.jpg`;
-  }
+  fillThumb(card.querySelector('.thumb'), ex);
   card.querySelector('.name').textContent = ex.name;
+  card.querySelector('.muscles').textContent = musclesLabel(ex);
   card.querySelector('.chip.rest').textContent = `descanso ${formatRest(ex.rest ?? SETTINGS.restSeconds)}`;
   card.querySelector('.last-date').textContent = last ? ` (${shortDate.format(parseDate(last.date))})` : '';
   card.querySelector('.history-link').href = `historico.html?ex=${ex.id}`;
@@ -137,7 +157,7 @@ function createCard(ex) {
   // Subir carga: nova carga, mesma quantidade de séries, topo da faixa de reps
   card.querySelector('.btn-progress').addEventListener('click', () => {
     openForm(card, {
-      weight: progressionLoad(ex.history) + PROGRESSION.weightIncrement,
+      weight: progressionLoad(historyOf(ex.id)) + PROGRESSION.weightIncrement,
       count: PROGRESSION.targetSets,
       reps: PROGRESSION.repsAfterIncrease[1],
     });
@@ -145,29 +165,62 @@ function createCard(ex) {
 
   // Adicionar: repete o último registro de hoje, ou o da última vez
   card.querySelector('.add-set-toggle').addEventListener('click', () => {
-    const ref = ex.entries.at(-1) ?? last?.entries.at(-1);
+    const ref = todayEntries(ex.id).at(-1) ?? last?.entries.at(-1);
     openForm(card, { weight: ref?.weight, count: ref?.sets, reps: ref?.reps });
   });
 
   card.querySelector('.add-set').addEventListener('submit', event => {
     event.preventDefault();
     const form = event.currentTarget;
-    ex.entries.push({
+    (today.entries[ex.id] ??= []).push({
       weight: fromUnit(Number(form.weight.value)),
       sets: Number(form.count.value),
       reps: Number(form.reps.value),
     });
+    saveToday();
     renderCard(card, ex);
     closeForm(card);
   });
 
+  card.querySelector('.remove-today').addEventListener('click', () => {
+    today.extras = today.extras.filter(id => id !== ex.id);
+    saveToday();
+    renderList();
+  });
+
   renderCard(card, ex);
   renderFavorite(card, ex);
-  cards.push({ card, ex });
+  return card;
 }
 
-mockExercises.forEach(createCard);
-sortCards();
+function renderList() {
+  cards = todayExerciseIds().map(id => {
+    const ex = exerciseById(id);
+    return { card: createCard(ex), ex };
+  });
+  list.replaceChildren();
+  sortCards();
+  applySearch();
+}
+
+// Busca da lupa: por nome ou músculo
+function applySearch() {
+  let visible = 0;
+  for (const { card, ex } of cards) {
+    const match = matchesQuery(ex, searchQuery);
+    card.hidden = !match;
+    if (match) visible++;
+  }
+  emptyMessage.hidden = visible > 0;
+  emptyMessage.textContent = cards.length
+    ? 'Nenhum exercício encontrado.'
+    : 'Nenhum exercício para hoje. Escolha um treino acima ou adicione exercícios.';
+}
+
+searchListeners.push(query => {
+  searchQuery = query;
+  applySearch();
+});
 
 // Trocar kg/lb: re-renderiza e fecha formulários abertos (estariam na unidade antiga)
 unitListeners.push(() => {
@@ -177,13 +230,31 @@ unitListeners.push(() => {
   }
 });
 
-// Busca: esconde os cards que não batem com o nome
-searchListeners.push(query => {
-  let visible = 0;
-  for (const { card, ex } of cards) {
-    const match = normalize(ex.name).includes(query);
-    card.hidden = !match;
-    if (match) visible++;
-  }
-  emptyMessage.hidden = visible > 0;
+// ---------- Adicionar exercício avulso (busca por nome ou músculo) ----------
+const addDialog = document.getElementById('add-dialog');
+const addPicker = createExercisePicker({
+  isAdded: id => todayExerciseIds().includes(id),
+  onToggle: id => {
+    if (addToToday(id)) {
+      renderList();
+      showToast(`${exerciseById(id).name} adicionado ao treino de hoje.`);
+    } else {
+      showToast('Esse exercício já está no treino de hoje.');
+    }
+  },
 });
+document.getElementById('add-picker').append(addPicker.element);
+
+document.getElementById('add-exercise').addEventListener('click', () => {
+  addPicker.render();
+  addDialog.showModal();
+  addPicker.focus();
+});
+addDialog.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => addDialog.close()));
+// Toque fora do painel fecha
+addDialog.addEventListener('click', event => {
+  if (event.target === addDialog) addDialog.close();
+});
+
+renderPresetSelect();
+renderList();

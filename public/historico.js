@@ -1,4 +1,4 @@
-// Página "Histórico". Depende de mock_user.js e common.js.
+// Página "Histórico". Depende de catalog.js, mock_user.js e common.js.
 
 // ---------- Métricas por treino (sempre em kg; converte só na exibição) ----------
 // 1RM estimado pela fórmula de Epley: carga × (1 + reps / 30)
@@ -25,15 +25,19 @@ const longDate = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'shor
 
 // Histórico + registros de hoje, do mais antigo para o mais recente
 function sessionsOf(ex) {
-  const sessions = [...ex.history];
-  if (ex.entries.length) sessions.unshift({ date: todayISO(), entries: ex.entries });
+  const sessions = [...historyOf(ex.id)];
+  if (todayEntries(ex.id).length) sessions.unshift({ date: todayISO(), entries: todayEntries(ex.id) });
   return sessions.slice().reverse();
 }
 
 // ---------- Estado ----------
 const params = new URLSearchParams(location.search);
-const sorted = sortByFavorite(mockExercises);
-let selected = mockExercises.find(ex => ex.id === Number(params.get('ex'))) ?? sorted[0];
+// Exercícios com algum registro (histórico ou hoje); ?ex= abre um específico, mesmo sem registro
+const logged = allExercises.filter(ex => historyOf(ex.id).length || todayEntries(ex.id).length);
+const requested = exerciseById(params.get('ex'));
+if (requested && !logged.includes(requested)) logged.unshift(requested);
+const sorted = sortByFavorite(logged);
+let selected = requested ?? sorted[0];
 let metric = 'e1rm';
 
 // ---------- Escolha do exercício ----------
@@ -58,18 +62,12 @@ for (const ex of sorted) {
   picker.append(btn);
 }
 
-// Roda do mouse rola a lista para o lado (no celular já rola com o dedo)
-picker.addEventListener('wheel', event => {
-  const canScroll = picker.scrollWidth > picker.clientWidth;
-  if (!canScroll || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
-  event.preventDefault();
-  picker.scrollLeft += event.deltaY;
-}, { passive: false });
+enableWheelScroll(picker);
 
 function select(ex) {
   selected = ex;
   picker.querySelectorAll('.pick').forEach(btn => {
-    const active = Number(btn.dataset.id) === ex.id;
+    const active = btn.dataset.id === ex.id;
     btn.setAttribute('aria-pressed', active);
     if (active) btn.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   });
@@ -80,8 +78,8 @@ function select(ex) {
 searchListeners.push(query => {
   const visible = [];
   picker.querySelectorAll('.pick').forEach(btn => {
-    const ex = mockExercises.find(e => e.id === Number(btn.dataset.id));
-    const match = normalize(ex.name).includes(query);
+    const ex = exerciseById(btn.dataset.id);
+    const match = matchesQuery(ex, query);
     btn.hidden = !match;
     if (match) visible.push(ex);
   });
@@ -103,6 +101,7 @@ function render() {
   const all = sessions.flatMap(s => s.entries);
 
   document.getElementById('ex-name').textContent = selected.name;
+  document.getElementById('ex-muscles').textContent = musclesLabel(selected);
   document.getElementById('stat-load').textContent = all.length ? withUnit(maxWeight(all)) : '—';
   document.getElementById('stat-1rm').textContent = all.length ? withUnit(METRICS.e1rm.value(all)) : '—';
   document.getElementById('stat-count').textContent = sessions.length;

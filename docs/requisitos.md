@@ -5,7 +5,8 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 ## Decisões de escopo
 
 - O app é um **diário de cargas**: o usuário registra o que fez, na ordem que quiser.
-- **Sem** fichas/rotinas pré-definidas, metas de séries/reps ou tempo de descanso.
+- **Treinos fixos** opcionais: o usuário monta até **5** rotinas próprias (ex.: segunda = pernas). Não há fichas prontas do app.
+- **Sem** metas de séries/reps. Tempo de descanso aparece só como recomendação.
 - Única sugestão automática: **progressão dupla** (ver "Sugestão de progressão").
 - O usuário decide a rotina e a sequência dos exercícios.
 - O app só cataloga **carga e volume** de cada exercício e mostra a evolução.
@@ -18,10 +19,22 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 - Login/logout com sessão persistente (cookie httpOnly).
 - Cada usuário vê apenas os próprios dados.
 
-### Exercícios
+### Exercícios (catálogo)
 - **Catálogo pronto** de exercícios, compartilhado por todos os usuários, com animação instrutiva.
 - O usuário escolhe do catálogo ou cria e nomeia os próprios exercícios.
-- Grupo muscular opcional (apenas para filtrar).
+- Cada exercício tem **tags de músculo** (um ou mais; o primeiro é o principal):
+  peito, costas, ombros, bíceps, tríceps, antebraço, abdômen, quadríceps, posterior de coxa, glúteos, panturrilha.
+- As tags servem para **filtrar e buscar**: na página Exercícios, na busca do topo,
+  ao adicionar exercício no Painel e ao montar um treino ("tríceps" encontra tudo que trabalha tríceps).
+- Descanso recomendado por exercício (padrão 30 s; ex.: 90 s em agachamento, leg press, stiff).
+
+### Treinos fixos (rotina)
+- Até **5** treinos por usuário (configurável: `SETTINGS.maxPresets`).
+- Cada treino tem nome, dias da semana (opcional) e lista ordenada de exercícios.
+- Montagem: busca por nome ou músculo + filtro por músculo; reordenar (subir/descer) e remover.
+- No Painel, o treino do dia é escolhido automaticamente pelo dia da semana; o usuário pode trocar
+  ou treinar "livre". Exercícios avulsos podem ser adicionados só para hoje.
+- Excluir um treino **não** apaga o histórico dos exercícios.
 
 ### Registro
 - Iniciar o treino do dia.
@@ -52,8 +65,12 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 
 ### Frontpage / navegação
 - Página inicial pública com acesso a login/cadastro.
-- Painel do usuário logado: últimos treinos e recordes recentes.
-- Telas: Painel → Treino do dia → Histórico/gráfico por exercício.
+- Telas do usuário logado (abas fixas embaixo no celular, links no topo em telas largas):
+  - **Painel**: treino de hoje (cards, registro de séries, adicionar exercício avulso).
+  - **Treino**: treinos fixos (criar, editar, excluir, "treinar hoje").
+  - **Exercícios**: catálogo com filtro por músculo.
+  - **Histórico**: gráfico e tabela de evolução por exercício.
+- Lupa no topo: busca por nome ou músculo na página atual.
 
 ## Requisitos não funcionais
 
@@ -77,14 +94,23 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 |---|---|---|
 | `users` | id, name, email, password_hash, created_at | Contas |
 | `auth_sessions` | id (token), user_id, expires_at | Login |
-| `exercise_catalog` | id, name, muscle_group, image_start, image_end, source, license | Catálogo compartilhado |
-| `exercises` | id, user_id, catalog_id, name, muscle_group | Exercícios do usuário |
+| `exercise_catalog` | id, name, image_start, image_end, rest_seconds, source, license | Catálogo compartilhado |
+| `muscles` | id (slug), name | Tags de músculo (peito, tríceps…) |
+| `catalog_muscles` | catalog_id, muscle_id, is_primary | Músculos de cada exercício do catálogo |
+| `exercises` | id, user_id, catalog_id, name | Exercícios do usuário |
+| `exercise_muscles` | exercise_id, muscle_id, is_primary | Músculos de exercícios criados pelo usuário |
+| `workout_templates` | id, user_id, name, days, created_at | Treinos fixos (máx. 5 por usuário) |
+| `workout_template_exercises` | template_id, exercise_id, position | Exercícios do treino fixo, em ordem |
 | `workouts` | id, user_id, date, notes | Um dia de treino |
 | `workout_exercises` | id, workout_id, exercise_id, position | Exercícios feitos no dia, na ordem do usuário |
 | `sets` | id, workout_exercise_id, set_number, weight, sets_count, reps | Cada registro (carga, vezes × reps) |
 
 `exercises.catalog_id` é opcional: preenchido quando o exercício vem do catálogo, vazio quando o usuário cria o próprio.
-O usuário pode renomear o exercício sem alterar o catálogo.
+O usuário pode renomear o exercício sem alterar o catálogo. Exercícios do catálogo usam `catalog_muscles`;
+os criados pelo usuário usam `exercise_muscles`.
+
+`workout_templates.days` guarda os dias como texto, ex.: `'1,4'` (0 = domingo … 6 = sábado).
+O limite de 5 treinos é checado na API ao criar.
 
 ### Schema (SQLite)
 
@@ -106,11 +132,23 @@ CREATE TABLE auth_sessions (
 CREATE TABLE exercise_catalog (
   id           INTEGER PRIMARY KEY,
   name         TEXT NOT NULL UNIQUE,         -- pt-BR
-  muscle_group TEXT,
   image_start  TEXT,                         -- caminho local, ex.: /media/supino-reto-0.jpg
   image_end    TEXT,
+  rest_seconds INTEGER NOT NULL DEFAULT 30,  -- descanso recomendado
   source       TEXT NOT NULL,                -- ex.: 'free-exercise-db'
   license      TEXT NOT NULL                 -- ex.: 'Unlicense'
+);
+
+CREATE TABLE muscles (
+  id   TEXT PRIMARY KEY,                     -- 'peito', 'triceps', 'posterior'…
+  name TEXT NOT NULL                         -- 'Peito', 'Tríceps', 'Posterior de coxa'
+);
+
+CREATE TABLE catalog_muscles (
+  catalog_id INTEGER NOT NULL REFERENCES exercise_catalog(id) ON DELETE CASCADE,
+  muscle_id  TEXT    NOT NULL REFERENCES muscles(id),
+  is_primary INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (catalog_id, muscle_id)
 );
 
 CREATE TABLE exercises (
@@ -118,8 +156,29 @@ CREATE TABLE exercises (
   user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   catalog_id   INTEGER REFERENCES exercise_catalog(id),
   name         TEXT NOT NULL,
-  muscle_group TEXT,
   UNIQUE (user_id, name)
+);
+
+CREATE TABLE exercise_muscles (
+  exercise_id INTEGER NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+  muscle_id   TEXT    NOT NULL REFERENCES muscles(id),
+  is_primary  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (exercise_id, muscle_id)
+);
+
+CREATE TABLE workout_templates (
+  id         INTEGER PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  days       TEXT NOT NULL DEFAULT '',       -- '1,4' = segunda e quinta
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE workout_template_exercises (
+  template_id INTEGER NOT NULL REFERENCES workout_templates(id) ON DELETE CASCADE,
+  exercise_id INTEGER NOT NULL REFERENCES exercises(id),
+  position    INTEGER NOT NULL,
+  PRIMARY KEY (template_id, exercise_id)
 );
 
 CREATE TABLE workouts (
@@ -147,6 +206,7 @@ CREATE TABLE sets (
 );
 
 CREATE INDEX idx_workouts_user_date ON workouts(user_id, date);
+CREATE INDEX idx_catalog_muscles    ON catalog_muscles(muscle_id);
 CREATE INDEX idx_we_exercise        ON workout_exercises(exercise_id);
 ```
 
@@ -165,6 +225,16 @@ JOIN workouts w           ON w.id = we.workout_id
 WHERE w.user_id = ? AND we.exercise_id = ?
 GROUP BY semana
 ORDER BY semana;
+```
+
+Exercícios do catálogo que trabalham um músculo (filtro / busca):
+
+```sql
+SELECT c.id, c.name, cm.is_primary
+FROM exercise_catalog c
+JOIN catalog_muscles cm ON cm.catalog_id = c.id
+WHERE cm.muscle_id = ?
+ORDER BY cm.is_primary DESC, c.name;
 ```
 
 Última vez que o exercício foi feito:
@@ -195,7 +265,9 @@ Frontend (HTML/CSS/JS) → API REST → SQLite
 
 Endpoints previstos:
 - `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`
-- `GET /catalog` (catálogo, com busca por nome/grupo muscular)
+- `GET /catalog?q=&muscle=` (catálogo, com busca por nome e filtro por músculo)
+- `GET /muscles`
+- `GET/POST /templates`, `PATCH/DELETE /templates/:id` (treinos fixos; `POST` recusa acima de 5)
 - `GET/POST /exercises` (`POST` aceita `catalog_id` ou `name` livre)
 - `GET/POST /workouts`, `GET /workouts/:id`
 - `POST /workouts/:id/exercises`
@@ -206,4 +278,5 @@ Endpoints previstos:
 ## Pendente
 - Definir a stack (sugestão: Node + Express + SQLite).
 - Definir hospedagem.
-- Selecionar e traduzir os exercícios do catálogo.
+- Selecionar e traduzir os exercícios do catálogo (protótipo tem 25).
+- Dois treinos fixos no mesmo dia: hoje o Painel pega o primeiro; decidir se pergunta.

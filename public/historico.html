@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#0f1115">
   <title>Histórico · Gym Tracker</title>
   <link rel="stylesheet" href="style.css">
+  <script src="catalog.js" defer></script>
   <script src="mock_user.js" defer></script>
   <script src="common.js" defer></script>
   <script src="historico.js" defer></script>
@@ -13,19 +14,33 @@
 <body>
   <header class="topbar">
     <div class="topbar-row">
-      <a class="logo" href="index.html" aria-label="Gym Tracker">
+      <a class="logo" href="index.html" aria-label="Gym Tracker – Painel">
         <span class="logo-mark" aria-hidden="true">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
             <path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/>
           </svg>
         </span>
+        <span class="logo-text">Gym Tracker</span>
       </a>
-      <nav aria-label="Principal">
-        <a href="#" aria-disabled="true" title="Em breve">Painel</a>
-        <a href="index.html">Treino</a>
-        <a href="historico.html" aria-current="page">Histórico</a>
+      <nav class="tabs" aria-label="Principal">
+        <a href="index.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11 12 4l9 7"/><path d="M5 10v10h14V10"/></svg>
+          <span>Painel</span>
+        </a>
+        <a href="treinos.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg>
+          <span>Treino</span>
+        </a>
+        <a href="exercicios.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>
+          <span>Exercícios</span>
+        </a>
+        <a href="historico.html" aria-current="page">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19h16"/><path d="m5 15 4-5 4 3 6-7"/></svg>
+          <span>Histórico</span>
+        </a>
       </nav>
-      <button type="button" class="icon-btn" id="search-toggle" aria-label="Buscar exercício" aria-expanded="false" aria-controls="search-bar">
+      <button type="button" class="icon-btn" id="search-toggle" aria-label="Buscar" aria-expanded="false" aria-controls="search-bar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
           <circle cx="11" cy="11" r="7"/>
           <path d="m20 20-3.5-3.5"/>
@@ -33,7 +48,7 @@
       </button>
     </div>
     <div class="search-bar" id="search-bar" hidden>
-      <input type="search" id="search-input" placeholder="Buscar exercício…" aria-label="Buscar exercício" autocomplete="off">
+      <input type="search" id="search-input" placeholder="Buscar por nome ou músculo…" aria-label="Buscar por nome ou músculo" autocomplete="off">
     </div>
   </header>
 
@@ -60,6 +75,7 @@
       </div>
     </div>
 
+
     <!-- Escolha do exercício (favoritos primeiro) -->
     <div class="picker" id="picker" role="group" aria-label="Exercício"></div>
     <p class="empty" id="empty" hidden>Nenhum exercício encontrado.</p>
@@ -67,6 +83,7 @@
     <section class="panel" id="detail" aria-labelledby="ex-name">
       <div class="detail-head">
         <h2 id="ex-name"></h2>
+        <p class="muscles" id="ex-muscles"></p>
       </div>
 
       <div class="stat-row">
@@ -115,5 +132,6 @@
       </div>
     </section>
   </main>
+
 </body>
 </html>
