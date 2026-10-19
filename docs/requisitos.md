@@ -275,8 +275,50 @@ Endpoints previstos:
 - `GET /stats/:exerciseId` (evolução semanal)
 - `GET /exercises/:id/last` (última vez)
 
+## Stack e hospedagem
+
+Contexto: uso pessoal + alguns amigos, custo zero por enquanto, e o objetivo é **aprender a montar o backend**
+(nada de backend pronto tipo Supabase/Firebase).
+
+### Decisão
+- **Stack:** Node + Express + SQLite (`better-sqlite3`), login próprio (hash argon2/bcrypt + sessão em cookie `httpOnly`).
+- **Servidor:** o **laptop Linux**, rodando 24h com `systemd`.
+- **Acesso externo:** **Tailscale Funnel** (grátis, HTTPS, endereço fixo `*.ts.net`, sem abrir porta no roteador
+  e funciona atrás de CGNAT). Alternativa futura: Cloudflare Tunnel com domínio próprio (~R$ 50/ano).
+- **Backup:** cópia diária do `.db` **fora do laptop** — `sqlite3 .backup` via cron ou Litestream → Cloudflare R2 (grátis até 10 GB).
+- **Desenvolvimento:** no laptop (mesmo sistema da produção). Código versionado no GitHub.
+
+### Frontend: GitHub Pages × Express
+Hoje `public/` é publicado no GitHub Pages (protótipo com dados de exemplo).
+Quando houver API, o recomendado é o **Express servir o `public/`** no mesmo endereço do túnel:
+evita CORS e cookie de sessão entre domínios (`SameSite=None`). O Pages pode continuar como demo do protótipo.
+
+### Cuidados com o laptop como servidor
+- Não suspender (inclusive com tampa fechada: `HandleLidSwitch=ignore`), na tomada, de preferência no cabo.
+- Fica fora do ar se faltar luz/internet — aceitável para o público atual.
+- Expor só a porta do app pelo túnel; manter o sistema atualizado; limitar tentativas de login; não rodar como root.
+- Maior risco: perder o disco → por isso o backup externo é obrigatório.
+
+### Alternativas avaliadas
+| Opção | Por que não agora |
+|---|---|
+| Cloudflare Pages + Workers + D1 | Grátis e SQLite, mas troca Express por Hono; menos aprendizado de servidor |
+| Supabase / Firebase | Backend pronto (contra o objetivo); Firebase é NoSQL e complica histórico/gráficos |
+| Fly.io / Railway / Render / VPS | Pagos (alguns US$/mês) ou plano grátis que dorme |
+| Oracle Cloud Always Free (São Paulo) | Grátis, mas cadastro com cartão costuma ser recusado, máquina ARM vive esgotada e instâncias ociosas podem ser desligadas — **plano B** se o laptop virar problema |
+
+O mesmo código (Node + SQLite) migra para Oracle/Fly.io/VPS sem mudanças.
+
+### Ordem de implementação
+1. Express servindo `public/`.
+2. SQLite com o schema deste documento.
+3. Cadastro/login/logout com sessão.
+4. Endpoints da API (sempre filtrando pelo usuário logado).
+5. Trocar `mock_user.js` e `localStorage` por chamadas à API.
+6. `systemd` (reinício automático e no boot).
+7. Tailscale Funnel.
+8. Backup externo.
+
 ## Pendente
-- Definir a stack (sugestão: Node + Express + SQLite).
-- Definir hospedagem.
 - Selecionar e traduzir os exercícios do catálogo (protótipo tem 25).
 - Dois treinos fixos no mesmo dia: hoje o Painel pega o primeiro; decidir se pergunta.
