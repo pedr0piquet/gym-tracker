@@ -311,9 +311,15 @@ Contexto: uso pessoal + alguns amigos, custo zero por enquanto, e o objetivo é 
 - **Desenvolvimento:** no laptop (mesmo sistema da produção). Código versionado no GitHub.
 
 ### Frontend: GitHub Pages × Express
-Hoje `public/` é publicado no GitHub Pages (protótipo com dados de exemplo).
-Quando houver API, o recomendado é o **Express servir o `public/`** no mesmo endereço do túnel:
-evita CORS e cookie de sessão entre domínios (`SameSite=None`). O Pages pode continuar como demo do protótipo.
+O **Express serve o `public/`** no mesmo endereço do túnel (sem CORS e sem cookie entre domínios).
+O GitHub Pages publica só `pages/index.html` (também como `404.html`), uma página de entrada que:
+1. consulta `APP_URL/api/health` (única rota com CORS, liberada só para `https://pedr0piquet.github.io`);
+2. se responder, redireciona para o mesmo caminho no servidor (`/gym-tracker/historico.html` → `APP_URL/historico.html`);
+3. se não, mostra "Não foi possível conectar ao servidor no momento" com "Tentar de novo".
+
+`APP_URL` é o endereço do Tailscale Funnel, gravado pelo `./tunnel.sh`.
+
+Para subir: `./run.sh prod` (servidor) + `./tunnel.sh` (Funnel; na primeira vez instala o Tailscale e pede login).
 
 ### Cuidados com o laptop como servidor
 - Não suspender (inclusive com tampa fechada: `HandleLidSwitch=ignore`), na tomada, de preferência no cabo.
@@ -338,7 +344,7 @@ O mesmo código (Node + SQLite) migra para Oracle/Fly.io/VPS sem mudanças.
 4. ~~Endpoints da API (sempre filtrando pelo usuário logado).~~ ✔
 5. ~~Trocar `mock_user.js` e `localStorage` por chamadas à API.~~ ✔ (no navegador ficam só tema, unidade e favoritos)
 6. `systemd` (reinício automático e no boot).
-7. Tailscale Funnel.
+7. Tailscale Funnel (`./tunnel.sh`; o GitHub Pages redireciona para ele).
 8. Backup externo.
 
 ## Pendente

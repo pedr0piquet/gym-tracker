@@ -33,7 +33,12 @@ api.use((req, res, next) => {
 api.use(loadUser);
 api.use('/auth', authRoutes);
 
+// A página do GitHub Pages consulta esta rota antes de redirecionar para cá.
+// Só ela libera CORS, e sem cookies (o resto da API continua só para o mesmo endereço).
+const PAGES_ORIGIN = process.env.PAGES_ORIGIN ?? 'https://pedr0piquet.github.io';
+
 api.get('/health', (req, res) => {
+  res.set('Access-Control-Allow-Origin', PAGES_ORIGIN);
   db.prepare('SELECT 1').get();
   res.json({ ok: true });
 });

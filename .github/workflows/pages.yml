@@ -1,8 +1,13 @@
 name: Deploy GitHub Pages
 
+# O Pages publica só a página de entrada (pages/), que redireciona para o servidor
+# do PC (Tailscale Funnel) ou avisa que ele está fora do ar. O app fica em public/
+# e é servido pelo Express.
+
 on:
   push:
     branches: [main]
+    paths: [pages/**, .github/workflows/pages.yml]
   workflow_dispatch:
 
 permissions:
@@ -23,8 +28,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # 404.html = mesma página, para qualquer caminho (ex.: /gym-tracker/historico.html) redirecionar
+      - run: cp pages/index.html pages/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: public
+          path: pages
       - id: deployment
         uses: actions/deploy-pages@v4
