@@ -75,7 +75,10 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 ## Requisitos não funcionais
 
 - **Mobile-first**: uso no celular entre séries; botões grandes, poucos toques por série.
-- Senhas com hash (bcrypt ou argon2).
+- Senhas com hash **argon2id** (`crypto.argon2` do próprio Node ≥ 24.7, parâmetros mínimos da OWASP).
+- Sessão: cookie `sid` httpOnly, `SameSite=Lax`, 30 dias, renovado quando passa da metade; `Secure` com `NODE_ENV=production`.
+- Toda escrita na API exige `Content-Type: application/json` (proteção contra CSRF).
+- Login bloqueado após 10 falhas no mesmo e-mail em 15 min.
 - Unidade padrão: kg.
 
 ## Catálogo de exercícios e direitos de imagem
@@ -93,8 +96,8 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
 | Tabela | Campos | Papel |
 |---|---|---|
 | `users` | id, name, email, password_hash, created_at | Contas |
-| `auth_sessions` | id (token), user_id, expires_at | Login |
-| `exercise_catalog` | id, name, image_start, image_end, rest_seconds, source, license | Catálogo compartilhado |
+| `auth_sessions` | id (SHA-256 do token), user_id, expires_at | Login |
+| `exercise_catalog` | id, slug, name, image_start, image_end, rest_seconds, source, license | Catálogo compartilhado |
 | `muscles` | id (slug), name | Tags de músculo (peito, tríceps…) |
 | `catalog_muscles` | catalog_id, muscle_id, is_primary | Músculos de cada exercício do catálogo |
 | `exercises` | id, user_id, catalog_id, name | Exercícios do usuário |
@@ -114,6 +117,8 @@ O limite de 5 treinos é checado na API ao criar.
 
 ### Schema (SQLite)
 
+Fonte da verdade: `server/schema.sql` (o bloco abaixo é um resumo; o arquivo também tem `CHECK`s e índices extras).
+
 ```sql
 CREATE TABLE users (
   id            INTEGER PRIMARY KEY,
@@ -124,13 +129,14 @@ CREATE TABLE users (
 );
 
 CREATE TABLE auth_sessions (
-  id         TEXT PRIMARY KEY,               -- token aleatório
+  id         TEXT PRIMARY KEY,               -- SHA-256 do token do cookie (o token em si não fica no banco)
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at TEXT NOT NULL
 );
 
 CREATE TABLE exercise_catalog (
   id           INTEGER PRIMARY KEY,
+  slug         TEXT NOT NULL UNIQUE,         -- 'supino-reto' (o mesmo id de public/catalog.js)
   name         TEXT NOT NULL UNIQUE,         -- pt-BR
   image_start  TEXT,                         -- caminho local, ex.: /media/supino-reto-0.jpg
   image_end    TEXT,
@@ -263,17 +269,33 @@ ORDER BY s.set_number;
 
 Frontend (HTML/CSS/JS) → API REST → SQLite
 
-Endpoints previstos:
-- `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`
-- `GET /catalog?q=&muscle=` (catálogo, com busca por nome e filtro por músculo)
+Endpoints (todos sob o prefixo `/api`, ex.: `POST /api/auth/login`; o resto do caminho serve o `public/`).
+Tudo fora de `/auth`, `/health` e `/muscles` exige login e só enxerga os dados do próprio usuário.
+
+**Implementados** (`server/auth.js`, `server/data.js`):
+- `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`
 - `GET /muscles`
-- `GET/POST /templates`, `PATCH/DELETE /templates/:id` (treinos fixos; `POST` recusa acima de 5)
-- `GET/POST /exercises` (`POST` aceita `catalog_id` ou `name` livre)
-- `GET/POST /workouts`, `GET /workouts/:id`
-- `POST /workouts/:id/exercises`
-- `POST /sets`, `PATCH /sets/:id`, `DELETE /sets/:id`
-- `GET /stats/:exerciseId` (evolução semanal)
-- `GET /exercises/:id/last` (última vez)
+- `GET /state?today=AAAA-MM-DD` — tudo que as páginas usam, de uma vez: usuário, exercícios próprios,
+  treinos fixos, histórico (antes de `today`) e o treino de `today`. Com poucos usuários e poucos dados,
+  uma leitura só é mais simples que vários endpoints; dá para quebrar quando o histórico crescer.
+- `POST /presets`, `PUT /presets/:id`, `DELETE /presets/:id` — treinos fixos (`POST` recusa acima de 5)
+- `PUT /days/:date/preset` `{ presetId }` — treino fixo escolhido no dia (`null` = livre)
+- `POST /days/:date/exercises` `{ exerciseId }` — exercício avulso no dia
+- `DELETE /days/:date/exercises/:exerciseId` — tira o avulso (só se ainda não tem série)
+- `POST /days/:date/sets` `{ exerciseId, weight, sets, reps }` — registra uma série (carga em kg)
+
+Ids de exercício na API: slug do catálogo (`supino-reto`) ou `u` + id para exercício próprio (`u12`).
+O exercício do catálogo vira linha em `exercises` no primeiro uso.
+A data do dia vem do navegador (fuso do usuário). Sem treino salvo no dia, o treino fixo sugerido é o do dia da semana.
+
+**Ainda não feitos** (a interface ainda não precisa): criar exercício próprio, editar/apagar série,
+`GET /catalog` (o catálogo vem de `public/catalog.js`), estatísticas calculadas no servidor.
+
+**Conta de demonstração:** `npm run seed` cria `gabriel@email.com` (senha `DEMO_PASSWORD` ou `gabriel123`)
+com os dados que eram do `mock_user.js` (`server/demo.js`). Se a conta já existir e estiver vazia, só recebe os dados.
+
+**Migrações:** `server/schema.sql` é a migração 1; as seguintes ficam em `server/db.js`
+(2: `workouts.template_id`, um treino por usuário e dia, cada exercício uma vez por treino).
 
 ## Stack e hospedagem
 
@@ -310,11 +332,11 @@ evita CORS e cookie de sessão entre domínios (`SameSite=None`). O Pages pode c
 O mesmo código (Node + SQLite) migra para Oracle/Fly.io/VPS sem mudanças.
 
 ### Ordem de implementação
-1. Express servindo `public/`.
-2. SQLite com o schema deste documento.
-3. Cadastro/login/logout com sessão.
-4. Endpoints da API (sempre filtrando pelo usuário logado).
-5. Trocar `mock_user.js` e `localStorage` por chamadas à API.
+1. ~~Express servindo `public/`.~~ ✔
+2. ~~SQLite com o schema deste documento.~~ ✔
+3. ~~Cadastro/login/logout com sessão.~~ ✔ (`public/login.html`)
+4. ~~Endpoints da API (sempre filtrando pelo usuário logado).~~ ✔
+5. ~~Trocar `mock_user.js` e `localStorage` por chamadas à API.~~ ✔ (no navegador ficam só tema, unidade e favoritos)
 6. `systemd` (reinício automático e no boot).
 7. Tailscale Funnel.
 8. Backup externo.

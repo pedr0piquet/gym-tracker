@@ -1,4 +1,4 @@
-// Página "Exercícios" (base do site). Depende de catalog.js, mock_user.js e common.js.
+// Página "Exercícios" (base do site). Depende de catalog.js e common.js.
 
 const filter = document.getElementById('muscle-filter');
 const catalogList = document.getElementById('catalog');
@@ -61,8 +61,9 @@ function createItem(ex) {
     add.textContent = added ? '✓ No treino de hoje' : '+ Treino de hoje';
     add.disabled = added;
   };
-  add.addEventListener('click', () => {
-    if (addToToday(ex.id)) showToast(`${ex.name} adicionado ao treino de hoje.`);
+  add.addEventListener('click', async () => {
+    add.disabled = true;
+    if (await addToToday(ex.id) === 'added') showToast(`${ex.name} adicionado ao treino de hoje.`);
     renderAdd();
   });
   renderAdd();
@@ -99,7 +100,7 @@ enableWheelScroll(filter);
 
 searchListeners.push(query => {
   searchQuery = query;
-  render();
+  if (today) render();
 });
 
-render();
+appReady.then(render);

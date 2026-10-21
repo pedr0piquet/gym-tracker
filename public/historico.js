@@ -1,4 +1,4 @@
-// Página "Histórico". Depende de catalog.js, mock_user.js e common.js.
+// Página "Histórico". Depende de catalog.js e common.js.
 
 // ---------- Métricas por treino (sempre em kg; converte só na exibição) ----------
 // 1RM estimado pela fórmula de Epley: carga × (1 + reps / 30)
@@ -31,13 +31,7 @@ function sessionsOf(ex) {
 }
 
 // ---------- Estado ----------
-const params = new URLSearchParams(location.search);
-// Exercícios com algum registro (histórico ou hoje); ?ex= abre um específico, mesmo sem registro
-const logged = allExercises.filter(ex => historyOf(ex.id).length || todayEntries(ex.id).length);
-const requested = exerciseById(params.get('ex'));
-if (requested && !logged.includes(requested)) logged.unshift(requested);
-const sorted = sortByFavorite(logged);
-let selected = requested ?? sorted[0];
+let selected = null;
 let metric = 'e1rm';
 
 // ---------- Escolha do exercício ----------
@@ -45,21 +39,30 @@ const picker = document.getElementById('picker');
 const emptyMessage = document.getElementById('empty');
 const detail = document.getElementById('detail');
 
-for (const ex of sorted) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'pick';
-  btn.dataset.id = ex.id;
-  if (isFavorite(ex.id)) {
-    const star = document.createElement('span');
-    star.className = 'pick-star';
-    star.setAttribute('aria-label', 'Favorito');
-    star.textContent = '★';
-    btn.append(star);
+// Exercícios com algum registro (histórico ou hoje); ?ex= abre um específico, mesmo sem registro
+function buildPicker() {
+  const logged = allExercises.filter(ex => historyOf(ex.id).length || todayEntries(ex.id).length);
+  const requested = exerciseById(new URLSearchParams(location.search).get('ex'));
+  if (requested && !logged.includes(requested)) logged.unshift(requested);
+  const sorted = sortByFavorite(logged);
+
+  for (const ex of sorted) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pick';
+    btn.dataset.id = ex.id;
+    if (isFavorite(ex.id)) {
+      const star = document.createElement('span');
+      star.className = 'pick-star';
+      star.setAttribute('aria-label', 'Favorito');
+      star.textContent = '★';
+      btn.append(star);
+    }
+    btn.append(ex.name);
+    btn.addEventListener('click', () => select(ex));
+    picker.append(btn);
   }
-  btn.append(ex.name);
-  btn.addEventListener('click', () => select(ex));
-  picker.append(btn);
+  return requested ?? sorted[0];
 }
 
 enableWheelScroll(picker);
@@ -307,14 +310,25 @@ function drawChart(sessions) {
   overlay.addEventListener('pointerleave', hide);
 }
 
-unitListeners.push(render);
-select(selected);
-
-// Redesenha só quando a largura muda de fato (girar o celular, redimensionar)
-let lastWidth = chart.clientWidth;
-new ResizeObserver(() => {
-  if (chart.clientWidth !== lastWidth) {
-    lastWidth = chart.clientWidth;
-    drawChart(sessionsOf(selected));
+appReady.then(() => {
+  const first = buildPicker();
+  if (!first) {
+    // Nenhum registro ainda: só a mensagem
+    emptyMessage.textContent = 'Nenhum treino registrado ainda. Registre séries no Painel para ver a evolução.';
+    emptyMessage.hidden = false;
+    detail.hidden = true;
+    return;
   }
-}).observe(chart);
+
+  unitListeners.push(render);
+  select(first);
+
+  // Redesenha só quando a largura muda de fato (girar o celular, redimensionar)
+  let lastWidth = chart.clientWidth;
+  new ResizeObserver(() => {
+    if (chart.clientWidth !== lastWidth) {
+      lastWidth = chart.clientWidth;
+      drawChart(sessionsOf(selected));
+    }
+  }).observe(chart);
+});

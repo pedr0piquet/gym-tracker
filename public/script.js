@@ -1,4 +1,4 @@
-// Página "Painel" (treino de hoje). Depende de catalog.js, mock_user.js e common.js.
+// Página "Painel" (treino de hoje). Depende de catalog.js e common.js.
 
 // ---------- Regras de progressão (ajuste aqui) ----------
 const PROGRESSION = {
@@ -56,10 +56,11 @@ function renderPresetSelect() {
   presetSelect.value = today.presetId ?? '';
 }
 
-presetSelect.addEventListener('change', () => {
-  today.presetId = presetSelect.value || null;
-  saveToday();
-  renderList();
+presetSelect.addEventListener('change', async () => {
+  presetSelect.disabled = true;
+  if (await setTodayPreset(presetSelect.value || null)) renderList();
+  else presetSelect.value = today.presetId ?? ''; // não salvou: volta a escolha anterior
+  presetSelect.disabled = false;
 });
 
 // ---------- Cards ----------
@@ -169,23 +170,25 @@ function createCard(ex) {
     openForm(card, { weight: ref?.weight, count: ref?.sets, reps: ref?.reps });
   });
 
-  card.querySelector('.add-set').addEventListener('submit', event => {
+  // Cada série vai para o servidor assim que registrada
+  card.querySelector('.add-set').addEventListener('submit', async event => {
     event.preventDefault();
     const form = event.currentTarget;
-    (today.entries[ex.id] ??= []).push({
-      weight: fromUnit(Number(form.weight.value)),
+    const submit = form.querySelector('button[type="submit"]');
+    submit.disabled = true;
+    const saved = await addTodaySet(ex.id, {
+      weight: Number(fromUnit(Number(form.weight.value)).toFixed(2)),
       sets: Number(form.count.value),
       reps: Number(form.reps.value),
     });
-    saveToday();
+    submit.disabled = false;
+    if (!saved) return; // o aviso já apareceu; o formulário continua preenchido
     renderCard(card, ex);
     closeForm(card);
   });
 
-  card.querySelector('.remove-today').addEventListener('click', () => {
-    today.extras = today.extras.filter(id => id !== ex.id);
-    saveToday();
-    renderList();
+  card.querySelector('.remove-today').addEventListener('click', async () => {
+    if (await removeFromToday(ex.id)) renderList();
   });
 
   renderCard(card, ex);
@@ -234,11 +237,12 @@ unitListeners.push(() => {
 const addDialog = document.getElementById('add-dialog');
 const addPicker = createExercisePicker({
   isAdded: id => todayExerciseIds().includes(id),
-  onToggle: id => {
-    if (addToToday(id)) {
+  onToggle: async id => {
+    const result = await addToToday(id);
+    if (result === 'added') {
       renderList();
       showToast(`${exerciseById(id).name} adicionado ao treino de hoje.`);
-    } else {
+    } else if (result === 'exists') {
       showToast('Esse exercício já está no treino de hoje.');
     }
   },
@@ -256,5 +260,7 @@ addDialog.addEventListener('click', event => {
   if (event.target === addDialog) addDialog.close();
 });
 
-renderPresetSelect();
-renderList();
+appReady.then(() => {
+  renderPresetSelect();
+  renderList();
+});

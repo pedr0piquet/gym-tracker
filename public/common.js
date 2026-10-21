@@ -1,6 +1,7 @@
 // Código compartilhado entre as páginas: configurações, preferências, dados,
 // unidade, tema, busca, favoritos, formatação e o seletor de exercícios.
-// Depende de catalog.js e mock_user.js.
+// Depende de catalog.js. Os dados do usuário vêm da API (/api/state); cada página
+// começa a desenhar em appReady.then(...).
 
 // ---------- Configurações (ajuste aqui) ----------
 const SETTINGS = {
@@ -32,10 +33,56 @@ function todayISO() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// ---------- API ----------
+const OFFLINE_MESSAGE = 'Não foi possível conectar ao servidor no momento. Tente de novo mais tarde.';
+
+class ApiError extends Error {}
+
+// Sem login → vai para login.html. Sem servidor (ou resposta que não é JSON, como
+// no GitHub Pages) → ApiError com OFFLINE_MESSAGE.
+async function api(method, path, body) {
+  let res;
+  try {
+    res = await fetch(`api/${path}`, {
+      method,
+      headers: method === 'GET' ? {} : { 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(OFFLINE_MESSAGE);
+  }
+  if (res.status === 401) {
+    location.href = 'login.html';
+    return new Promise(() => {}); // a página vai ser trocada; nada mais roda
+  }
+  if (res.status === 204) return null;
+  const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+  if (!data) throw new ApiError(OFFLINE_MESSAGE);
+  if (!res.ok) throw new ApiError(data.error ?? 'Não foi possível salvar.');
+  return data;
+}
+
+// Para escritas: avisa o erro e devolve false, sem quebrar a página
+async function save(method, path, body) {
+  try {
+    return (await api(method, path, body)) ?? true;
+  } catch (err) {
+    if (!(err instanceof ApiError)) throw err;
+    showToast(err.message === OFFLINE_MESSAGE ? 'Não foi possível salvar no momento. Tente de novo.' : err.message);
+    return false;
+  }
+}
+
+// ---------- Dados do usuário (preenchidos por loadApp) ----------
+let currentUser = null;
+let exerciseHistory = {}; // { exId: [{ date, entries }] }, do mais recente para o mais antigo
+let presets = [];   // [{ id, name, days, exercises }]
+let today = null;   // { date, presetId, extras: [ids], entries: { id: [registros] } }
+
 // ---------- Exercícios (catálogo do site + criados pelo usuário) ----------
-const allExercises = [...CATALOG, ...mockCustomExercises];
+const allExercises = [...CATALOG];
 const exerciseById = id => allExercises.find(ex => ex.id === id);
-const historyOf = id => mockHistory[id] ?? [];
+const historyOf = id => exerciseHistory[id] ?? [];
 const musclesLabel = ex => ex.muscles.map(m => MUSCLES[m]).join(' · ');
 
 // Sem acento e minúsculo: "elevacao" encontra "Elevação"
@@ -68,25 +115,32 @@ function thumbElement(ex, className = 'thumb') {
 }
 
 // ---------- Treinos fixos (máx. SETTINGS.maxPresets) ----------
-let presets = loadJSON('presets') ?? structuredClone(mockPresets);
-const savePresets = () => saveJSON('presets', presets);
 const presetById = id => presets.find(p => p.id === id);
 const describeDays = days => (days.length ? [...days].sort().map(d => DAYS[d]).join(' · ') : 'Sem dia fixo');
 
-// ---------- Treino de hoje (vale só para a data de hoje) ----------
-// { date, presetId, extras: [ids avulsos], entries: { id: [registros] } }
-let today = loadJSON('today');
-if (today?.date !== todayISO()) {
-  const weekday = new Date().getDay();
-  today = {
-    date: todayISO(),
-    presetId: presets.find(p => p.days.includes(weekday))?.id ?? null,
-    ...structuredClone(mockToday),
-  };
-  saveJSON('today', today);
-}
-const saveToday = () => saveJSON('today', today);
+// ---------- Treino de hoje ----------
 const todayEntries = id => today.entries[id] ?? [];
+const todayPath = () => `days/${today.date}`;
+
+// Escolher o treino fixo do dia (null = livre)
+async function setTodayPreset(presetId) {
+  if (!(await save('PUT', `${todayPath()}/preset`, { presetId }))) return false;
+  today.presetId = presetId;
+  return true;
+}
+
+async function addTodaySet(id, entry) {
+  if (!(await save('POST', `${todayPath()}/sets`, { exerciseId: id, ...entry }))) return false;
+  (today.entries[id] ??= []).push(entry);
+  if (!today.extras.includes(id)) today.extras.push(id);
+  return true;
+}
+
+async function removeFromToday(id) {
+  if (!(await save('DELETE', `${todayPath()}/exercises/${encodeURIComponent(id)}`))) return false;
+  today.extras = today.extras.filter(x => x !== id);
+  return true;
+}
 
 // Treino fixo escolhido + avulsos + o que já tem registro hoje, sem repetir
 function todayExerciseIds() {
@@ -95,11 +149,12 @@ function todayExerciseIds() {
     .filter(id => exerciseById(id));
 }
 
-function addToToday(id) {
-  if (todayExerciseIds().includes(id)) return false;
+// Retorna 'added', 'exists' ou 'error' (o erro já foi avisado)
+async function addToToday(id) {
+  if (todayExerciseIds().includes(id)) return 'exists';
+  if (!(await save('POST', `${todayPath()}/exercises`, { exerciseId: id }))) return 'error';
   today.extras.push(id);
-  saveToday();
-  return true;
+  return 'added';
 }
 
 // ---------- Unidade (kg / lb) ----------
@@ -135,9 +190,9 @@ const maxWeight = entries => Math.max(...entries.map(e => e.weight));
 const describeEntry = e => `${e.sets} × ${e.reps}`;
 
 // ---------- Favoritos (máx. SETTINGS.maxFavorites) ----------
-let favorites = (loadJSON('favorites') ?? [])
-  .filter(id => exerciseById(id))
-  .slice(0, SETTINGS.maxFavorites);
+// Ficam neste navegador, separados por usuário (carregados em loadApp)
+let favorites = [];
+const favoritesKey = () => `favorites:${currentUser.id}`;
 
 const isFavorite = id => favorites.includes(id);
 
@@ -151,7 +206,7 @@ function toggleFavorite(id) {
   } else {
     favorites.push(id);
   }
-  saveJSON('favorites', favorites);
+  saveJSON(favoritesKey(), favorites);
   return true;
 }
 
@@ -251,8 +306,9 @@ function createExercisePicker({ isAdded, onToggle }) {
       btn.className = `btn ${added ? 'btn-added' : 'btn-primary'} btn-small`;
       btn.textContent = added ? '✓' : '+';
       btn.setAttribute('aria-label', added ? `Remover ${ex.name}` : `Adicionar ${ex.name}`);
-      btn.addEventListener('click', () => {
-        onToggle(ex.id);
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        await onToggle(ex.id);
         render();
       });
 
@@ -262,9 +318,9 @@ function createExercisePicker({ isAdded, onToggle }) {
     empty.hidden = list.length > 0;
   }
 
+  // A lista só é desenhada ao abrir (render()), quando os dados já chegaram
   search.addEventListener('input', render);
   wrap.append(search, chips, results, empty);
-  render();
   return { element: wrap, render, focus: () => search.focus() };
 }
 
@@ -325,6 +381,78 @@ themeButton.addEventListener('click', () => {
 systemDark.addEventListener('change', applyTheme);
 applyTheme();
 
-// ---------- Saudação ----------
-const greeting = document.getElementById('greeting');
-if (greeting) greeting.textContent = `Olá, ${mockUser.name}. `;
+// ---------- Conta (menu do usuário) e saudação ----------
+async function logout() {
+  try {
+    await fetch('api/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  } finally {
+    location.href = 'login.html';
+  }
+}
+
+// O espaço do botão já existe antes da resposta, para o topo não pular
+const accountSlot = document.createElement('div');
+accountSlot.className = 'account';
+document.querySelector('.topbar-row')?.append(accountSlot);
+
+function renderAccount(user) {
+  accountSlot.innerHTML = `
+    <button type="button" class="account-btn" popovertarget="account-menu"></button>
+    <div class="account-menu" id="account-menu" popover>
+      <p class="account-name"></p>
+      <p class="account-email"></p>
+      <button type="button" class="btn btn-block" id="logout-btn">Sair</button>
+    </div>`;
+  const button = accountSlot.querySelector('.account-btn');
+  button.textContent = user.name.trim().charAt(0).toUpperCase();
+  button.setAttribute('aria-label', `Conta de ${user.name}`);
+  accountSlot.querySelector('.account-name').textContent = user.name;
+  accountSlot.querySelector('.account-email').textContent = user.email;
+  accountSlot.querySelector('#logout-btn').addEventListener('click', logout);
+}
+
+// ---------- Carregamento ----------
+// Enquanto carrega (ou se o servidor estiver fora), só o título da página aparece,
+// com o aviso em .app-status. Sem login, api() leva para login.html.
+const appStatus = document.createElement('div');
+appStatus.className = 'app-status';
+appStatus.setAttribute('role', 'status');
+appStatus.textContent = 'Carregando…';
+const pageHead = document.querySelector('.page-head');
+if (pageHead) pageHead.after(appStatus);
+else document.querySelector('main')?.prepend(appStatus);
+document.body.classList.add('app-pending');
+
+async function loadApp() {
+  let state;
+  try {
+    state = await api('GET', `state?today=${todayISO()}`);
+  } catch (err) {
+    appStatus.replaceChildren(err.message || OFFLINE_MESSAGE);
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'btn btn-small';
+    retry.textContent = 'Tentar de novo';
+    retry.addEventListener('click', () => location.reload());
+    appStatus.append(retry);
+    appStatus.classList.add('app-status-error');
+    return new Promise(() => {}); // as páginas não desenham nada sem os dados
+  }
+
+  currentUser = state.user;
+  allExercises.push(...state.customExercises);
+  exerciseHistory = state.history;
+  presets = state.presets;
+  today = state.today;
+  favorites = (loadJSON(favoritesKey()) ?? []).filter(id => exerciseById(id)).slice(0, SETTINGS.maxFavorites);
+
+  renderAccount(currentUser);
+  const greeting = document.getElementById('greeting');
+  if (greeting) greeting.textContent = `Olá, ${currentUser.name.trim().split(/\s+/)[0]}. `;
+
+  appStatus.remove();
+  document.body.classList.remove('app-pending');
+}
+
+// Só resolve quando os dados chegam; sem servidor fica pendente (o aviso já está na tela)
+const appReady = loadApp();

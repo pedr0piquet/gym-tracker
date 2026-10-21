@@ -886,3 +886,120 @@ h1 {
 }
 .day-toggle[aria-pressed="true"] { border-color: transparent; background: var(--accent); color: #fff; }
 .day-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Entrar / criar conta (login.html) ---------- */
+.auth-theme { margin-left: auto; }
+.auth { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+.auth-mode { margin-bottom: 16px; }
+.auth-mode button { flex: 1; height: 36px; font-size: 14px; }
+.auth-form { display: grid; gap: 14px; }
+.auth-form .btn-block { margin-top: 4px; }
+.auth-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.auth-field[hidden] { display: none; }
+.auth-field input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* 16px evita o zoom automático do iPhone ao focar */
+}
+.auth-field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.password-row { display: flex; gap: 8px; }
+.password-row input { flex: 1; min-width: 0; }
+.password-row .btn { min-height: 48px; min-width: 84px; }
+.auth-hint { font-weight: 400; }
+.auth-hint[hidden] { display: none; }
+.form-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+.form-error[hidden] { display: none; }
+
+/* ---------- Conta no topo (common.js) ---------- */
+.account { display: flex; min-width: 40px; height: 40px; }
+.login-link {
+  display: grid;
+  place-items: center;
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.account-btn {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.login-link:focus-visible,
+.account-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.account-menu {
+  /* popover nativo, preso ao canto direito do topo */
+  position: fixed;
+  inset: auto;
+  top: calc(64px + env(safe-area-inset-top));
+  right: max(16px, (100vw - 520px) / 2);
+  width: min(260px, calc(100vw - 32px));
+  margin: 0;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .12);
+}
+.account-name { margin: 0; font-weight: 700; }
+.account-email {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.account-menu .btn-block { margin-top: 12px; }
+
+/* ---------- Carregando / servidor fora do ar (common.js) ---------- */
+/* Até os dados chegarem, só o título da página aparece */
+.app-pending main > :not(.page-head):not(.app-status) { display: none !important; }
+.app-pending .account { visibility: hidden; }
+.app-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+.app-status-error {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+}

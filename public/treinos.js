@@ -1,4 +1,4 @@
-// Página "Treino" (treinos fixos / rotina). Depende de catalog.js, mock_user.js e common.js.
+// Página "Treino" (treinos fixos / rotina). Depende de catalog.js e common.js.
 
 const presetList = document.getElementById('presets');
 const counter = document.getElementById('preset-counter');
@@ -63,10 +63,10 @@ function createPresetCard(p) {
   start.type = 'button';
   start.className = 'btn btn-primary btn-small';
   start.textContent = 'Treinar hoje';
-  start.addEventListener('click', () => {
-    today.presetId = p.id;
-    saveToday();
-    location.href = 'index.html';
+  start.addEventListener('click', async () => {
+    start.disabled = true;
+    if (await setTodayPreset(p.id)) location.href = 'index.html';
+    start.disabled = false;
   });
 
   const edit = document.createElement('button');
@@ -79,14 +79,11 @@ function createPresetCard(p) {
   remove.type = 'button';
   remove.className = 'link-button danger';
   remove.textContent = 'Excluir';
-  remove.addEventListener('click', () => {
+  remove.addEventListener('click', async () => {
     if (!confirm(`Excluir o treino "${p.name}"? O histórico dos exercícios não é apagado.`)) return;
+    if (!(await save('DELETE', `presets/${p.id}`))) return;
     presets = presets.filter(x => x !== p);
-    savePresets();
-    if (today.presetId === p.id) {
-      today.presetId = null;
-      saveToday();
-    }
+    if (today.presetId === p.id) today.presetId = null;
     render();
   });
 
@@ -223,23 +220,29 @@ function openEditor(preset) {
   if (!preset) form.name.focus();
 }
 
-form.addEventListener('submit', event => {
-  const name = form.name.value.trim();
+// Só fecha o editor depois que o servidor salvou
+form.addEventListener('submit', async event => {
+  event.preventDefault();
   if (!draft.exercises.length) {
-    event.preventDefault();
     showToast('Adicione pelo menos um exercício ao treino.');
     return;
   }
-  if (editing) {
-    Object.assign(editing, { name, days: draft.days, exercises: draft.exercises });
-  } else {
-    presets.push({ id: `treino-${Date.now()}`, name, days: draft.days, exercises: draft.exercises });
-  }
-  savePresets();
+  const body = { name: form.name.value.trim(), days: draft.days, exercises: draft.exercises };
+  const submit = form.querySelector('button[type="submit"]');
+  submit.disabled = true;
+  const result = editing
+    ? await save('PUT', `presets/${editing.id}`, body)
+    : await save('POST', 'presets', body);
+  submit.disabled = false;
+  if (!result) return;
+
+  if (editing) Object.assign(editing, result.preset);
+  else presets.push(result.preset);
+  editor.close();
   render();
   showToast(editing ? 'Treino atualizado.' : 'Treino criado.');
 });
 
 editor.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => editor.close()));
 
-render();
+appReady.then(render);
