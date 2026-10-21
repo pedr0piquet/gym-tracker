@@ -30,13 +30,16 @@ if ! tailscale status >/dev/null 2>&1; then
   sudo tailscale up
 fi
 
-# 3. Deixar o seu usuário controlar o Tailscale sem sudo (para o funnel e para o off)
-if ! tailscale funnel status >/dev/null 2>&1; then
+# 3 e 4. Funnel: https://<pc>.<tailnet>.ts.net → http://127.0.0.1:$PORT
+#    O reset apaga a configuração antiga, que fica presa ao nome anterior se a máquina
+#    for renomeada. Se o seu usuário ainda não pode mexer no Tailscale, libera uma vez
+#    com sudo (operator) e tenta de novo; depois disso, nada aqui precisa de sudo.
+if ! tailscale serve reset 2>/dev/null; then
+  echo "Liberando o seu usuário para configurar o Tailscale (pede a senha do sudo uma vez)..."
   sudo tailscale set --operator="$USER"
+  tailscale serve reset
 fi
-
-# 4. Funnel: https://<pc>.<tailnet>.ts.net → http://127.0.0.1:$PORT
-#    Na primeira vez, o Tailscale mostra um link para ativar HTTPS/Funnel na conta.
+# Na primeira vez, o Tailscale mostra um link para ativar HTTPS/Funnel na conta.
 tailscale funnel --bg "$PORT"
 
 URL="https://$(tailscale status --json | node -e '
