@@ -1,47 +1,72 @@
 // Página "Painel" (treino de hoje). Depende de catalog.js e common.js.
 
-// ---------- Regras de progressão (ajuste aqui) ----------
+// ---------- Regras de progressão (ajuste aqui), por tipo de medida ----------
 const PROGRESSION = {
-  sessionsAtSameLoad: 3,   // nº de treinos seguidos com a mesma carga
-  targetSets: 3,           // séries que precisam atingir targetReps no último treino
-  targetReps: 12,          // reps por série para considerar a carga "dominada"
-  weightIncrement: 2.5,    // kg a somar ao subir a carga (idealmente +10%)
-  repsAfterIncrease: [6, 8], // faixa de reps ao voltar com a carga nova
+  // Carga: progressão dupla. Os últimos N treinos com a mesma carga e o mais recente
+  // com targetSets séries de targetReps → sobe weightIncrement e volta para a faixa de reps.
+  load: {
+    sessions: 3,             // nº de treinos seguidos com a mesma carga
+    targetSets: 3,           // séries que precisam atingir targetReps no último treino
+    targetReps: 12,          // reps por série para considerar a carga "dominada"
+    weightIncrement: 2.5,    // kg a somar ao subir a carga (idealmente +10%)
+    repsAfterIncrease: [6, 8], // faixa de reps ao voltar com a carga nova
+  },
+  // Peso do corpo / tempo: nos últimos N treinos (mesmo lastro), pelo menos targetSets
+  // séries chegaram às mesmas reps (ou segundos) → sugere step a mais.
+  bodyweight: { sessions: 2, targetSets: 3, step: 2 },   // +2 reps
+  time:       { sessions: 2, targetSets: 3, step: 10 },  // +10 s
 };
 
-function formatRest(seconds) {
-  if (seconds < 60) return `${seconds} s`;
-  const min = Math.floor(seconds / 60);
-  const sec = seconds % 60;
-  return sec ? `${min} min ${sec} s` : `${min} min`;
-}
-
 // "3 × 12" para um registro; "2 × 12 + 1 × 8" para vários
-function describeReps(entries) {
-  return entries.map(describeEntry).join(' + ');
+function describeReps(entries, ex) {
+  return entries.map(e => describeEntry(e, ex)).join(' + ');
 }
 
-// "40 kg" quando a carga é a mesma; senão "até 80 kg"
-function describeLoad(entries) {
+// "40 kg" quando a carga é a mesma; senão "até 80 kg". Lastro: "+10 kg". Sem carga: ''
+function describeLoad(entries, ex) {
   if (!entries.length) return '';
   const max = maxWeight(entries);
-  return entries.every(e => e.weight === max) ? withUnit(max) : `até ${withUnit(max)}`;
+  const label = describeWeight({ weight: max }, ex);
+  if (!label) return '';
+  return entries.every(e => e.weight === max) ? label : `até ${label}`;
 }
 
-// Retorna a carga a subir, ou null se ainda não é hora.
-// Regra: os últimos N treinos usaram a mesma carga e o mais recente
-// atingiu targetSets séries de targetReps nessa carga.
-function progressionLoad(history) {
-  const recent = history.slice(0, PROGRESSION.sessionsAtSameLoad);
-  if (recent.length < PROGRESSION.sessionsAtSameLoad) return null;
+// Séries do treino com essa carga e pelo menos `reps` repetições (ou segundos)
+const setsReaching = (session, weight, reps) => session.entries
+  .filter(e => e.weight === weight && e.reps >= reps)
+  .reduce((total, e) => total + e.sets, 0);
 
-  const load = maxWeight(recent[0].entries);
-  if (!recent.every(session => maxWeight(session.entries) === load)) return null;
+// Próximo registro sugerido { weight, sets, reps }, ou null se ainda não é hora
+function progressionFor(ex) {
+  const measure = measureOf(ex);
+  const rule = PROGRESSION[measure];
+  const recent = historyOf(ex.id).slice(0, rule.sessions);
+  if (recent.length < rule.sessions) return null;
 
-  const doneSets = recent[0].entries
-    .filter(e => e.weight === load && e.reps >= PROGRESSION.targetReps)
-    .reduce((total, e) => total + e.sets, 0);
-  return doneSets >= PROGRESSION.targetSets ? load : null;
+  const weight = maxWeight(recent[0].entries);
+  if (!recent.every(session => maxWeight(session.entries) === weight)) return null;
+
+  if (measure === 'load') {
+    if (setsReaching(recent[0], weight, rule.targetReps) < rule.targetSets) return null;
+    return { weight: weight + rule.weightIncrement, sets: rule.targetSets, reps: rule.repsAfterIncrease[1] };
+  }
+
+  // Maior número de reps (ou segundos) que o treino mais recente fez em targetSets séries
+  const reps = Math.max(0, ...recent[0].entries
+    .filter(e => e.weight === weight)
+    .map(e => e.reps)
+    .filter(r => setsReaching(recent[0], weight, r) >= rule.targetSets));
+  if (!reps || !recent.every(session => setsReaching(session, weight, reps) >= rule.targetSets)) return null;
+  return { weight, sets: rule.targetSets, reps: reps + rule.step };
+}
+
+// Texto do botão: "↑ 42,5 kg · 6–8 reps", "↑ 3 × 14", "↑ 3 × 55 s"
+function progressionLabel(next, ex) {
+  if (measureOf(ex) === 'load') {
+    const [minReps, maxReps] = PROGRESSION.load.repsAfterIncrease;
+    return `↑ ${withUnit(next.weight)} · ${minReps}–${maxReps} reps`;
+  }
+  return `↑ ${formatEntry(next, ex)}`;
 }
 
 // ---------- Escolha do treino de hoje ----------
@@ -74,32 +99,30 @@ let searchQuery = '';
 // Preenche tudo que depende dos registros ou da unidade
 function renderCard(card, ex) {
   const entries = todayEntries(ex.id);
-  card.querySelector('.chip.sets').textContent = entries.length ? describeReps(entries) : 'Nenhuma série ainda';
-  card.querySelector('.chip.load').textContent = describeLoad(entries);
-  card.querySelector('.unit-label').textContent = unit;
+  const measure = MEASURES[measureOf(ex)];
+  card.querySelector('.chip.sets').textContent = entries.length ? describeReps(entries, ex) : 'Nenhuma série ainda';
+  card.querySelector('.chip.load').textContent = describeLoad(entries, ex);
+  card.querySelector('.unit-label').textContent = measure.weightOptional ? `${unit}, opcional` : unit;
 
   const setList = card.querySelector('.set-list');
   setList.replaceChildren();
   entries.forEach((e, i) => {
     const row = setTemplate.content.cloneNode(true);
     row.querySelector('.set-number').textContent = i + 1;
-    row.querySelector('.set-weight').textContent = withUnit(e.weight);
-    row.querySelector('.set-reps').textContent = `${describeEntry(e)} reps`;
+    row.querySelector('.set-weight').textContent = describeWeight(e, ex) || 'Peso do corpo';
+    row.querySelector('.set-reps').textContent = measureOf(ex) === 'time' ? describeEntry(e, ex) : `${describeEntry(e, ex)} reps`;
     setList.append(row);
   });
 
   const last = historyOf(ex.id)[0];
   card.querySelector('.last-sets').textContent = last
-    ? last.entries.map(e => `${withUnit(e.weight)} · ${describeEntry(e)}`).join(', ')
+    ? last.entries.map(e => formatEntry(e, ex)).join(', ')
     : 'primeira vez';
 
-  const load = progressionLoad(historyOf(ex.id));
+  const next = progressionFor(ex);
   const progressBtn = card.querySelector('.btn-progress');
-  progressBtn.hidden = load === null;
-  if (load !== null) {
-    const [minReps, maxReps] = PROGRESSION.repsAfterIncrease;
-    progressBtn.textContent = `↑ ${withUnit(load + PROGRESSION.weightIncrement)} · ${minReps}–${maxReps} reps`;
-  }
+  progressBtn.hidden = next === null;
+  if (next) progressBtn.textContent = progressionLabel(next, ex);
 
   // Só exercícios avulsos e ainda sem registro podem sair do dia
   card.querySelector('.remove-today').hidden = !today.extras.includes(ex.id) || entries.length > 0;
@@ -123,7 +146,8 @@ function openForm(card, { weight, count, reps }) {
   const form = card.querySelector('.add-set');
   form.hidden = false;
   card.querySelector('.add-set-toggle').hidden = true;
-  form.weight.value = weight != null ? Number(toUnit(weight).toFixed(1)) : '';
+  // Sem carga (peso do corpo / tempo): campo vazio em vez de 0
+  form.weight.value = weight ? Number(toUnit(weight).toFixed(1)) : '';
   form.count.value = count ?? 1;
   form.reps.value = reps ?? '';
   form.reps.focus();
@@ -141,7 +165,14 @@ function createCard(ex) {
   fillThumb(card.querySelector('.thumb'), ex);
   card.querySelector('.name').textContent = ex.name;
   card.querySelector('.muscles').textContent = musclesLabel(ex);
-  card.querySelector('.chip.rest').textContent = `descanso ${formatRest(ex.rest ?? SETTINGS.restSeconds)}`;
+  card.querySelector('.chip.rest').textContent = `descanso ${formatSeconds(ex.rest ?? SETTINGS.restSeconds)}`;
+
+  // Formulário conforme a medida: "Lastro (kg, opcional)", "Segundos"…
+  const measure = MEASURES[measureOf(ex)];
+  const form = card.querySelector('.add-set');
+  card.querySelector('.weight-label').textContent = measure.weightLabel;
+  card.querySelector('.reps-label').textContent = measure.repsLabel;
+  form.weight.required = !measure.weightOptional;
   card.querySelector('.last-date').textContent = last ? ` (${shortDate.format(parseDate(last.date))})` : '';
   card.querySelector('.history-link').href = `historico.html?ex=${ex.id}`;
 
@@ -155,13 +186,10 @@ function createCard(ex) {
     }
   });
 
-  // Subir carga: nova carga, mesma quantidade de séries, topo da faixa de reps
+  // Progressão: pré-preenche o próximo registro sugerido; o usuário confirma
   card.querySelector('.btn-progress').addEventListener('click', () => {
-    openForm(card, {
-      weight: progressionLoad(historyOf(ex.id)) + PROGRESSION.weightIncrement,
-      count: PROGRESSION.targetSets,
-      reps: PROGRESSION.repsAfterIncrease[1],
-    });
+    const next = progressionFor(ex);
+    openForm(card, { weight: next.weight, count: next.sets, reps: next.reps });
   });
 
   // Adicionar: repete o último registro de hoje, ou o da última vez
@@ -177,7 +205,7 @@ function createCard(ex) {
     const submit = form.querySelector('button[type="submit"]');
     submit.disabled = true;
     const saved = await addTodaySet(ex.id, {
-      weight: Number(fromUnit(Number(form.weight.value)).toFixed(2)),
+      weight: Number(fromUnit(Number(form.weight.value || 0)).toFixed(2)), // vazio = sem carga
       sets: Number(form.count.value),
       reps: Number(form.reps.value),
     });

@@ -305,7 +305,8 @@ dataRoutes.post('/days/:date/sets', (req, res) => {
     throw new HttpError(400, 'Carga inválida');
   }
   if (!Number.isInteger(sets) || sets < 1 || sets > 50) throw new HttpError(400, 'Número de séries inválido');
-  if (!Number.isInteger(reps) || reps < 1 || reps > 1000) throw new HttpError(400, 'Número de reps inválido');
+  // Em exercícios de tempo, reps são segundos (até 1 h)
+  if (!Number.isInteger(reps) || reps < 1 || reps > 3600) throw new HttpError(400, 'Número de reps (ou segundos) inválido');
 
   db.transaction(() => {
     const exerciseId = resolveExercise(req.user.id, req.body.exerciseId);

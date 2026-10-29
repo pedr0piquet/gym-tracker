@@ -187,7 +187,38 @@ const shortDate = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'sho
 const formatLoad = kgValue => number.format(toUnit(kgValue));
 const withUnit = kgValue => `${formatLoad(kgValue)} ${unit}`;
 const maxWeight = entries => Math.max(...entries.map(e => e.weight));
-const describeEntry = e => `${e.sets} × ${e.reps}`;
+
+// "45 s", "1 min 30 s"
+function formatSeconds(seconds) {
+  if (seconds < 60) return `${seconds} s`;
+  const min = Math.floor(seconds / 60);
+  const sec = seconds % 60;
+  return sec ? `${min} min ${sec} s` : `${min} min`;
+}
+
+// ---------- Como cada exercício é medido (campo `measure` do catálogo) ----------
+// Todo registro é { weight (kg), sets, reps }. Em 'time', reps guarda os segundos.
+// Em 'bodyweight' e 'time' a carga é opcional (0 = sem carga).
+const MEASURES = {
+  load:       { weightLabel: 'Carga',  weightOptional: false, repsLabel: 'Reps' },
+  bodyweight: { weightLabel: 'Lastro', weightOptional: true,  repsLabel: 'Reps' },
+  time:       { weightLabel: 'Carga',  weightOptional: true,  repsLabel: 'Segundos' },
+};
+const measureOf = ex => (MEASURES[ex.measure] ? ex.measure : 'load');
+
+// "3 × 12" ou, em tempo, "3 × 45 s"
+const describeEntry = (e, ex) => `${e.sets} × ${measureOf(ex) === 'time' ? formatSeconds(e.reps) : e.reps}`;
+
+// Carga de um registro: "40 kg"; lastro "+10 kg"; sem carga → ''
+function describeWeight(e, ex) {
+  const measure = measureOf(ex);
+  if (measure === 'load') return withUnit(e.weight);
+  if (!e.weight) return '';
+  return measure === 'bodyweight' ? `+${withUnit(e.weight)}` : withUnit(e.weight);
+}
+
+// "40 kg · 3 × 12", "3 × 12", "+10 kg · 3 × 8", "3 × 45 s"
+const formatEntry = (e, ex) => [describeWeight(e, ex), describeEntry(e, ex)].filter(Boolean).join(' · ');
 
 // ---------- Favoritos (máx. SETTINGS.maxFavorites) ----------
 // Ficam neste navegador, separados por usuário (carregados em loadApp)

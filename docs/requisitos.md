@@ -52,11 +52,23 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
   - séries diferentes: `3 séries · 12/10/8 · até 45 kg`
 - Expandido: lista das séries (nº, carga, reps), botão "Adicionar série" e a referência da última vez.
 
+### Tipos de medida (`measure` no catálogo)
+| Tipo | Registro | Carga | Exemplos |
+|---|---|---|---|
+| `load` (padrão) | carga · vezes × reps | obrigatória | supino, rosca, leg press |
+| `bodyweight` | vezes × reps | lastro opcional | flexão, barra fixa, paralelas, abdominais |
+| `time` | vezes × segundos | opcional | prancha, prancha lateral, caminhada do fazendeiro |
+
+No banco é o mesmo registro (`sets.weight`, `sets_count`, `reps`); em `time`, `reps` guarda segundos.
+O Histórico muda conforme o tipo: carga/1RM/volume, reps máx./reps totais, ou maior tempo/tempo total.
+
 ### Sugestão de progressão
 - Se os últimos **N** treinos do exercício usaram a mesma carga e o mais recente atingiu **3 × 12** nessa carga,
   aparece um botão ao lado de "Última vez": subir **+2,5 kg** e voltar para **6–8 reps**.
 - O botão só pré-preenche a próxima série; o usuário confirma.
-- Valores configuráveis (`PROGRESSION` no frontend): treinos seguidos, séries, reps-alvo, incremento, faixa de reps.
+- Peso do corpo: com o mesmo lastro, se os 2 últimos treinos fizeram 3 séries com as mesmas reps → sugere **+2 reps**.
+- Tempo: mesma regra → sugere **+10 s**.
+- Valores configuráveis (`PROGRESSION` no frontend, por tipo): treinos seguidos, séries, reps-alvo, incremento, faixa de reps.
 
 ### Acompanhamento
 - Histórico por exercício, semana a semana: carga máxima, volume total, reps totais.
@@ -87,6 +99,10 @@ Web app para registrar exercícios, cargas e repetições ao longo das semanas e
   Cada exercício tem 2 fotos (início e fim do movimento); a "animação" alterna as duas via CSS.
 - Imagens **hospedadas no próprio servidor**, não por hotlink.
 - Importar uma seleção de ~100–150 exercícios comuns, com nomes traduzidos para pt-BR.
+  **Feito: 109 exercícios** em `public/catalog.js`; cada um tem `src` (id no free-exercise-db).
+  Para incluir outro: adicionar a linha no catálogo e rodar `npm run media` (baixa as fotos) e `npm run seed`.
+- GIFs de verdade: não há base aberta (em 10/2026). ExerciseDB tem GIFs, mas é paga (licença comercial);
+  imagens de sites de terceiros não podem ser usadas sem autorização.
 - Cada item registra `source` e `license`, para permitir outras fontes no futuro
   (ex.: wger com crédito CC-BY-SA, ExerciseDB pago, ou GIFs com autorização escrita).
 - **Não** usar imagens de sites de terceiros sem licença ou autorização.
@@ -348,5 +364,4 @@ O mesmo código (Node + SQLite) migra para Oracle/Fly.io/VPS sem mudanças.
 8. Backup externo.
 
 ## Pendente
-- Selecionar e traduzir os exercícios do catálogo (protótipo tem 25).
 - Dois treinos fixos no mesmo dia: hoje o Painel pega o primeiro; decidir se pergunta.

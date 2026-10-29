@@ -86,13 +86,14 @@
       </div>
 
       <div class="stat-row">
+        <!-- rótulos e valores dependem da medida do exercício (historico.js) -->
         <div class="stat-tile">
-          <span class="stat-label">Maior carga</span>
-          <span class="stat-value" id="stat-load"></span>
+          <span class="stat-label" id="stat-a-label"></span>
+          <span class="stat-value" id="stat-a"></span>
         </div>
         <div class="stat-tile">
-          <span class="stat-label">Melhor 1RM est.</span>
-          <span class="stat-value" id="stat-1rm"></span>
+          <span class="stat-label" id="stat-b-label"></span>
+          <span class="stat-value" id="stat-b"></span>
         </div>
         <div class="stat-tile">
           <span class="stat-label">Treinos</span>
@@ -102,11 +103,7 @@
 
       <div class="chart-head">
         <span class="chart-title" id="chart-title"></span>
-        <div class="segmented" id="metric-toggle" role="group" aria-label="Métrica do gráfico">
-          <button type="button" data-metric="e1rm">1RM est.</button>
-          <button type="button" data-metric="maxLoad">Carga</button>
-          <button type="button" data-metric="volume">Volume</button>
-        </div>
+        <div class="segmented" id="metric-toggle" role="group" aria-label="Métrica do gráfico"></div>
       </div>
 
       <figure class="chart" id="chart">
@@ -122,8 +119,8 @@
             <tr>
               <th scope="col">Data</th>
               <th scope="col">Registros</th>
-              <th scope="col" class="num">Carga máx.</th>
-              <th scope="col" class="num">Volume</th>
+              <th scope="col" class="num" id="col-a"></th>
+              <th scope="col" class="num" id="col-b"></th>
             </tr>
           </thead>
           <tbody id="sessions-body"></tbody>

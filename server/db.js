@@ -21,6 +21,13 @@ const MIGRATIONS = [
     CREATE UNIQUE INDEX ux_we_workout_exercise    ON workout_exercises(workout_id, exercise_id);
     CREATE UNIQUE INDEX ux_exercises_user_catalog ON exercises(user_id, catalog_id);
   `),
+
+  // 3: como o exercício é medido. 'load' = carga × reps; 'bodyweight' = reps (carga = lastro,
+  //    opcional); 'time' = sets.reps guarda segundos (carga opcional)
+  db => db.exec(`
+    ALTER TABLE exercise_catalog ADD COLUMN measure TEXT NOT NULL DEFAULT 'load'
+      CHECK (measure IN ('load', 'bodyweight', 'time'));
+  `),
 ];
 
 mkdirSync(dirname(DB_PATH), { recursive: true });

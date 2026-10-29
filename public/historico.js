@@ -1,27 +1,87 @@
 // Página "Histórico". Depende de catalog.js e common.js.
 
-// ---------- Métricas por treino (sempre em kg; converte só na exibição) ----------
+// ---------- Métricas por treino (cargas sempre em kg; converte só na exibição) ----------
+// kind: 'weight' (kg/lb), 'reps' ou 'time' (segundos) — define unidade e formatação.
 // 1RM estimado pela fórmula de Epley: carga × (1 + reps / 30)
+const sumOf = (entries, fn) => entries.reduce((total, e) => total + fn(e), 0);
 const METRICS = {
   e1rm: {
-    title: '1RM estimado',
+    title: '1RM estimado', short: '1RM est.', kind: 'weight',
     value: entries => Math.max(...entries.map(e => e.weight * (1 + e.reps / 30))),
     note: '1RM estimado = carga × (1 + reps ÷ 30), fórmula de Epley. Junta carga e reps num número só.',
   },
   maxLoad: {
-    title: 'Carga máxima',
+    title: 'Carga máxima', short: 'Carga', kind: 'weight',
     value: entries => maxWeight(entries),
     note: 'Maior carga usada no treino, sem considerar as reps.',
   },
   volume: {
-    title: 'Volume',
-    value: entries => entries.reduce((total, e) => total + e.weight * e.sets * e.reps, 0),
+    title: 'Volume', short: 'Volume', kind: 'weight', compact: true,
+    value: entries => sumOf(entries, e => e.weight * e.sets * e.reps),
     note: 'Volume = carga × vezes × reps. Sobe com mais séries, não só com mais força.',
+  },
+  bestReps: {
+    title: 'Máximo de reps', short: 'Reps', kind: 'reps',
+    value: entries => Math.max(...entries.map(e => e.reps)),
+    note: 'Mais repetições feitas numa série do treino.',
+  },
+  totalReps: {
+    title: 'Reps totais', short: 'Total', kind: 'reps',
+    value: entries => sumOf(entries, e => e.sets * e.reps),
+    note: 'Soma das repetições do treino (vezes × reps).',
+  },
+  bestTime: {
+    title: 'Maior tempo', short: 'Tempo', kind: 'time',
+    value: entries => Math.max(...entries.map(e => e.reps)),
+    note: 'Série mais longa do treino.',
+  },
+  totalTime: {
+    title: 'Tempo total', short: 'Total', kind: 'time',
+    value: entries => sumOf(entries, e => e.sets * e.reps),
+    note: 'Soma do tempo de todas as séries do treino (vezes × segundos).',
   },
 };
 
+// O que cada medida mostra: gráfico (opções), indicadores, colunas da tabela e o que conta como recorde
+const VIEWS = {
+  load: {
+    chart: ['e1rm', 'maxLoad', 'volume'],
+    stats: [['Maior carga', 'maxLoad'], ['Melhor 1RM est.', 'e1rm']],
+    table: ['maxLoad', 'volume'],
+  },
+  bodyweight: {
+    chart: ['bestReps', 'totalReps'],
+    stats: [['Máx. reps', 'bestReps'], ['Maior lastro', 'maxLoad']],
+    table: ['bestReps', 'totalReps'],
+  },
+  time: {
+    chart: ['bestTime', 'totalTime'],
+    stats: [['Maior tempo', 'bestTime'], ['Maior carga', 'maxLoad']],
+    table: ['bestTime', 'totalTime'],
+  },
+};
+const viewOf = ex => VIEWS[measureOf(ex)];
+
 const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 });
 const longDate = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
+
+// Valor no eixo do gráfico: carga convertida para kg/lb; reps e segundos como estão
+const chartValue = (key, entries) => {
+  const v = METRICS[key].value(entries);
+  return METRICS[key].kind === 'weight' ? toUnit(v) : v;
+};
+
+const unitOf = key => ({ weight: unit, reps: 'reps', time: 's' })[METRICS[key].kind];
+
+// Texto de uma métrica: "40 kg", "1,2 mil" (volume), "12", "1 min 30 s"; sem carga → "—"
+function formatMetric(key, entries) {
+  const metric = METRICS[key];
+  const v = metric.value(entries);
+  if (metric.kind === 'time') return formatSeconds(v);
+  if (metric.kind === 'reps') return number.format(v);
+  if (!v && key === 'maxLoad') return '—';
+  return metric.compact ? compact.format(toUnit(v)) : withUnit(v);
+}
 
 // Histórico + registros de hoje, do mais antigo para o mais recente
 function sessionsOf(ex) {
@@ -91,26 +151,45 @@ searchListeners.push(query => {
   if (visible.length && !visible.includes(selected)) select(visible[0]);
 });
 
-// ---------- Métrica ----------
-const metricButtons = document.querySelectorAll('#metric-toggle button');
-metricButtons.forEach(btn => btn.addEventListener('click', () => {
-  metric = btn.dataset.metric;
-  render();
-}));
+// ---------- Métrica (botões conforme a medida do exercício) ----------
+const metricToggle = document.getElementById('metric-toggle');
+
+function renderMetricButtons() {
+  const keys = viewOf(selected).chart;
+  if (!keys.includes(metric)) metric = keys[0];
+  metricToggle.replaceChildren(...keys.map(key => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = METRICS[key].short;
+    btn.setAttribute('aria-pressed', key === metric);
+    btn.addEventListener('click', () => {
+      metric = key;
+      render();
+    });
+    return btn;
+  }));
+}
 
 // ---------- Renderização ----------
 function render() {
   const sessions = sessionsOf(selected);
   const all = sessions.flatMap(s => s.entries);
 
+  const view = viewOf(selected);
+
   document.getElementById('ex-name').textContent = selected.name;
   document.getElementById('ex-muscles').textContent = musclesLabel(selected);
-  document.getElementById('stat-load').textContent = all.length ? withUnit(maxWeight(all)) : '—';
-  document.getElementById('stat-1rm').textContent = all.length ? withUnit(METRICS.e1rm.value(all)) : '—';
+  view.stats.forEach(([label, key], i) => {
+    const id = i === 0 ? 'stat-a' : 'stat-b';
+    document.getElementById(`${id}-label`).textContent = label;
+    document.getElementById(id).textContent = all.length ? formatMetric(key, all) : '—';
+  });
   document.getElementById('stat-count').textContent = sessions.length;
+  document.getElementById('col-a').textContent = METRICS[view.table[0]].title;
+  document.getElementById('col-b').textContent = METRICS[view.table[1]].title;
 
-  metricButtons.forEach(btn => btn.setAttribute('aria-pressed', btn.dataset.metric === metric));
-  document.getElementById('chart-title').textContent = `${METRICS[metric].title} (${unit}) por treino`;
+  renderMetricButtons();
+  document.getElementById('chart-title').textContent = `${METRICS[metric].title} (${unitOf(metric)}) por treino`;
   document.getElementById('chart-note').textContent = METRICS[metric].note;
 
   renderTable(sessions);
@@ -129,13 +208,14 @@ function renderTable(sessions) {
     return;
   }
 
-  // Recorde = carga máxima maior que todos os treinos anteriores
+  // Recorde = primeira coluna (carga máxima, reps ou tempo) maior que em todos os treinos anteriores
+  const [colA, colB] = viewOf(selected).table;
   let best = -Infinity;
   const records = new Set();
   sessions.forEach((s, i) => {
-    const load = maxWeight(s.entries);
-    if (i > 0 && load > best) records.add(s);
-    best = Math.max(best, load);
+    const value = METRICS[colA].value(s.entries);
+    if (i > 0 && value > best) records.add(s);
+    best = Math.max(best, value);
   });
 
   for (const s of [...sessions].reverse()) {
@@ -145,21 +225,21 @@ function renderTable(sessions) {
     dateCell.textContent = s.date === todayISO() ? 'Hoje' : shortDate.format(parseDate(s.date));
 
     const entriesCell = row.insertCell();
-    entriesCell.textContent = s.entries.map(e => `${formatLoad(e.weight)} · ${describeEntry(e)}`).join(', ');
+    entriesCell.textContent = s.entries.map(e => formatEntry(e, selected)).join(', ');
 
-    const loadCell = row.insertCell();
-    loadCell.className = 'num';
-    loadCell.textContent = withUnit(maxWeight(s.entries));
+    const cellA = row.insertCell();
+    cellA.className = 'num';
+    cellA.textContent = formatMetric(colA, s.entries);
     if (records.has(s)) {
       const badge = document.createElement('span');
       badge.className = 'badge';
       badge.textContent = 'recorde';
-      loadCell.append(' ', badge);
+      cellA.append(' ', badge);
     }
 
-    const volumeCell = row.insertCell();
-    volumeCell.className = 'num';
-    volumeCell.textContent = compact.format(toUnit(METRICS.volume.value(s.entries)));
+    const cellB = row.insertCell();
+    cellB.className = 'num';
+    cellB.textContent = formatMetric(colB, s.entries);
   }
 }
 
@@ -211,7 +291,7 @@ function drawChart(sessions) {
   const points = sessions.map(s => ({
     session: s,
     date: parseDate(s.date),
-    value: toUnit(METRICS[metric].value(s.entries)),
+    value: chartValue(metric, s.entries),
   }));
 
   // Escalas
@@ -267,7 +347,7 @@ function drawChart(sessions) {
   const hover = el('circle', { r: 6, class: 'chart-dot chart-dot-hover', visibility: 'hidden' });
 
   svg.setAttribute('aria-label',
-    `${METRICS[metric].title} em ${unit}: de ${number.format(points[0].value)} em ${shortDate.format(points[0].date)} ` +
+    `${METRICS[metric].title} em ${unitOf(metric)}: de ${number.format(points[0].value)} em ${shortDate.format(points[0].date)} ` +
     `a ${number.format(last.value)} em ${shortDate.format(last.date)}. Recorde ${number.format(best.value)}.`);
 
   // Hover / toque: ponto mais próximo no eixo X
@@ -288,10 +368,10 @@ function drawChart(sessions) {
     const title = document.createElement('strong');
     title.textContent = longDate.format(p.date);
     const value = document.createElement('span');
-    value.textContent = `${METRICS[metric].title}: ${number.format(p.value)} ${unit}`;
+    value.textContent = `${METRICS[metric].title}: ${number.format(p.value)} ${unitOf(metric)}`;
     const entries = document.createElement('span');
     entries.className = 'muted';
-    entries.textContent = p.session.entries.map(e => `${withUnit(e.weight)} · ${describeEntry(e)}`).join(', ');
+    entries.textContent = p.session.entries.map(e => formatEntry(e, selected)).join(', ');
     tooltip.append(title, value, entries);
     tooltip.hidden = false;
 

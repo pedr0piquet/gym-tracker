@@ -19,11 +19,11 @@ const upsertMuscle = db.prepare(`
   ON CONFLICT (id) DO UPDATE SET name = excluded.name`);
 
 const upsertExercise = db.prepare(`
-  INSERT INTO exercise_catalog (slug, name, image_start, image_end, rest_seconds, source, license)
-  VALUES (@slug, @name, @image_start, @image_end, @rest_seconds, 'free-exercise-db', 'Unlicense')
+  INSERT INTO exercise_catalog (slug, name, image_start, image_end, rest_seconds, measure, source, license)
+  VALUES (@slug, @name, @image_start, @image_end, @rest_seconds, @measure, 'free-exercise-db', 'Unlicense')
   ON CONFLICT (slug) DO UPDATE SET
     name = excluded.name, image_start = excluded.image_start, image_end = excluded.image_end,
-    rest_seconds = excluded.rest_seconds
+    rest_seconds = excluded.rest_seconds, measure = excluded.measure
   RETURNING id`);
 
 const clearMuscles = db.prepare('DELETE FROM catalog_muscles WHERE catalog_id = ?');
@@ -39,6 +39,7 @@ db.transaction(() => {
       image_start: ex.media ? `media/${ex.media}-0.jpg` : null,
       image_end: ex.media ? `media/${ex.media}-1.jpg` : null,
       rest_seconds: ex.rest ?? DEFAULT_REST,
+      measure: ex.measure ?? 'load',
     });
     clearMuscles.run(id);
     ex.muscles.forEach((m, i) => addMuscle.run(id, m, i === 0 ? 1 : 0));
